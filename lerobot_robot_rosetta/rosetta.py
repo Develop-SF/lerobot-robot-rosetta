@@ -451,7 +451,7 @@ class Rosetta(Robot):
         for spec in self.config.observation_specs:
             if spec.is_image:
                 key = spec.key.removeprefix("observation.images.")
-                h, w = spec.image_resize
+                h, w = spec.image_shape
                 features[key] = (h, w, spec.image_channels)
             else:
                 for name in get_namespaced_names(spec):

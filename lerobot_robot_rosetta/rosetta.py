@@ -160,6 +160,32 @@ class _TopicBridge:
             f"{len(self._config.action_specs)} act @ {self._config.fps}Hz"
         )
 
+    def activate_publishers(self) -> None:
+        """Manually activate all lifecycle action publishers.
+
+        ``LifecycleNode`` only auto-activates managed entities that exist at
+        the moment ``on_activate`` runs. When a bridge is built *after* the
+        host node is already active (e.g. mid-run contract swap), the new
+        publishers stay inactive and ``pub.publish()`` becomes a silent no-op
+        until we flip them on ourselves. State arg is unused by rclpy's
+        ``LifecyclePublisher.on_activate`` but kept to match the interface.
+        """
+        if self._node is None:
+            return
+        state = self._node._state_machine.current_state
+        for _, pub in self._act_publishers.values():
+            if pub is not None:
+                pub.on_activate(state)
+
+    def deactivate_publishers(self) -> None:
+        """Manually deactivate all lifecycle action publishers (mirror of activate)."""
+        if self._node is None:
+            return
+        state = self._node._state_machine.current_state
+        for _, pub in self._act_publishers.values():
+            if pub is not None:
+                pub.on_deactivate(state)
+
     def teardown(self) -> None:
         """Destroy all ROS2 resources on the host node."""
         node = self._node

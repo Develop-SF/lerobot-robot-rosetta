@@ -189,7 +189,11 @@ class _TopicBridge:
     def send_safety_action(self) -> None:
         """Publish safety action (zeros or hold) per spec's safety_behavior.
 
-        Only publishes on activated lifecycle publishers.
+        Only publishes on activated lifecycle publishers. When the spec
+        requests ``hold`` but ``_last_sent`` has no cached value yet (fresh
+        bridge / after ``reset_state`` / before first inference), publish
+        nothing — a held-from-nothing zero broadcast is unsafe for action
+        spaces where zero is a valid commandable value (e.g. DMP g_local).
         """
         if self._node is None:
             return
@@ -199,7 +203,9 @@ class _TopicBridge:
                 continue
             if spec.safety_behavior == "none":
                 continue
-            if spec.safety_behavior == "hold" and topic in self._last_sent:
+            if spec.safety_behavior == "hold":
+                if topic not in self._last_sent:
+                    continue
                 arr = self._last_sent[topic]
             else:
                 arr = np.zeros(len(spec.names), dtype=np.float32)

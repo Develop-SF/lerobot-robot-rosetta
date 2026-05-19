@@ -111,6 +111,10 @@ class _TopicBridge:
         self._last_action_ns: Optional[int] = None
         self._last_sent: dict[str, np.ndarray] = {}
 
+        # Inference flag publisher (chunk-boundary signal)
+        self._inference_flag_pub: Optional[Any] = None
+        self._inference_flag_count: int = 0
+
         # Reference to the host node (set in setup, cleared in teardown)
         self._node: Optional[Any] = None
 
@@ -155,6 +159,36 @@ class _TopicBridge:
             period_sec = 2.0 / self._config.fps
             self._watchdog_timer = node.create_timer(period_sec, self._on_watchdog)
 
+        # Inference flag publisher: latched UInt32 counter that advances on
+        # every action chunk arrival. Downstream controllers group trajectory
+        # messages between counter changes as one inference chunk.
+        flag_spec = getattr(self._config.contract, "inference_flag", None)
+        if flag_spec is not None:
+            from std_msgs.msg import UInt32
+
+            qos = qos_profile_from_dict(flag_spec.qos)
+            if qos is None:
+                from rclpy.qos import (
+                    DurabilityPolicy,
+                    HistoryPolicy,
+                    QoSProfile,
+                    ReliabilityPolicy,
+                )
+
+                qos = QoSProfile(
+                    depth=1,
+                    reliability=ReliabilityPolicy.RELIABLE,
+                    history=HistoryPolicy.KEEP_LAST,
+                    durability=DurabilityPolicy.TRANSIENT_LOCAL,
+                )
+            self._inference_flag_pub = node.create_publisher(
+                UInt32, flag_spec.topic, qos
+            )
+            self._inference_flag_count = 0
+            initial = UInt32()
+            initial.data = 0
+            self._inference_flag_pub.publish(initial)
+
         node.get_logger().info(
             f"TopicBridge: {len(self._config.observation_specs)} obs, "
             f"{len(self._config.action_specs)} act @ {self._config.fps}Hz"
@@ -178,6 +212,11 @@ class _TopicBridge:
             if pub is not None:
                 node.destroy_publisher(pub)
         self._act_publishers.clear()
+
+        if self._inference_flag_pub is not None:
+            node.destroy_publisher(self._inference_flag_pub)
+            self._inference_flag_pub = None
+        self._inference_flag_count = 0
 
         self._obs_buffers.clear()
         self._missing_streams.clear()
@@ -268,6 +307,24 @@ class _TopicBridge:
                     obs[name] = float(data[i]) if data is not None else 0.0
 
         return obs
+
+    def publish_inference_flag(self) -> int:
+        """Increment and publish the inference chunk-boundary counter.
+
+        Called once per action-chunk arrival. Downstream controllers detect
+        the value change to delimit chunks of trajectory messages. Returns
+        the new counter value (wraps at 2**32 to fit std_msgs/UInt32).
+        """
+        if self._inference_flag_pub is None or self._node is None:
+            return self._inference_flag_count
+
+        from std_msgs.msg import UInt32
+
+        self._inference_flag_count = (self._inference_flag_count + 1) & 0xFFFFFFFF
+        msg = UInt32()
+        msg.data = self._inference_flag_count
+        self._inference_flag_pub.publish(msg)
+        return self._inference_flag_count
 
     def publish_action(self, action: RobotAction) -> RobotAction:
         """Publish action to ROS2 topics via lifecycle publishers."""
@@ -410,6 +467,9 @@ class _RosettaLifecycleNode(Node):
     def publish_action(self, action: RobotAction) -> RobotAction:
         return self._bridge.publish_action(action)
 
+    def publish_inference_flag(self) -> int:
+        return self._bridge.publish_inference_flag()
+
     def reset_state(self) -> None:
         self._bridge.reset_state()
 
@@ -451,7 +511,7 @@ class Rosetta(Robot):
         for spec in self.config.observation_specs:
             if spec.is_image:
                 key = spec.key.removeprefix("observation.images.")
-                h, w = spec.image_resize
+                h, w = spec.image_shape
                 features[key] = (h, w, spec.image_channels)
             else:
                 for name in get_namespaced_names(spec):
@@ -626,6 +686,14 @@ class Rosetta(Robot):
         if self._bridge is not None:
             return self._bridge.publish_action(action)
         return self._node.publish_action(action)
+
+    def publish_inference_flag(self) -> int:
+        """Publish a chunk-boundary signal; safe to call when not connected."""
+        if self._bridge is not None:
+            return self._bridge.publish_inference_flag()
+        if self._node is not None:
+            return self._node.publish_inference_flag()
+        return 0
 
     @property
     def config(self) -> RosettaConfig:

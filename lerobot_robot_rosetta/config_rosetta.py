@@ -87,7 +87,11 @@ from rosetta.common.contract import (
     Contract,
     ObservationStreamSpec,
     ActionStreamSpec,
+    ROLE_INFERENCE,
+    VALID_ROLES,
+    is_unified_contract,
     load_contract,
+    load_unified_contract,
 )
 from rosetta.common.contract_utils import (
     iter_observation_specs,
@@ -104,6 +108,9 @@ class RosettaConfig(RobotConfig):
     config_path: str = ""
     fps: int | None = None
     is_classifier: bool = False
+    # Contract role for unified contracts. This Robot backend publishes
+    # actions and feeds observations to a policy, i.e. the deploy side.
+    role: str = ROLE_INFERENCE
 
     _contract: Contract | None = field(default=None, init=False, repr=False)
     _observation_specs: list[ObservationStreamSpec] | None = field(default=None, init=False, repr=False)
@@ -116,7 +123,15 @@ class RosettaConfig(RobotConfig):
         if not self.config_path:
             return
 
-        self._contract = load_contract(self.config_path)
+        if self.role not in VALID_ROLES:
+            raise ValueError(
+                f"Unknown contract role '{self.role}'. "
+                f"Must be one of {sorted(VALID_ROLES)}"
+            )
+        if is_unified_contract(self.config_path):
+            self._contract = load_unified_contract(self.config_path, self.role)
+        else:
+            self._contract = load_contract(self.config_path)
 
         if self.fps is None:
             self.fps = self._contract.fps

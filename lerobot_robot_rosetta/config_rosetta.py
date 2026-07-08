@@ -127,7 +127,7 @@ class RosettaConfig(RobotConfig):
                 f"Unknown contract role '{self.role}'. "
                 f"Must be one of {sorted(VALID_ROLES)}"
             )
-        if not Path(self.config_path).exists():
+        if not Path(self.config_path).is_file():
             raise FileNotFoundError(
                 f"Contract file not found: {self.config_path}"
             )

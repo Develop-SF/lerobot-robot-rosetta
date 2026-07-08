@@ -90,7 +90,6 @@ from rosetta.common.contract import (
     ROLE_INFERENCE,
     VALID_ROLES,
     is_unified_contract,
-    load_contract,
     load_unified_contract,
 )
 from rosetta.common.contract_utils import (
@@ -128,10 +127,18 @@ class RosettaConfig(RobotConfig):
                 f"Unknown contract role '{self.role}'. "
                 f"Must be one of {sorted(VALID_ROLES)}"
             )
-        if is_unified_contract(self.config_path):
-            self._contract = load_unified_contract(self.config_path, self.role)
-        else:
-            self._contract = load_contract(self.config_path)
+        if not Path(self.config_path).is_file():
+            raise FileNotFoundError(
+                f"Contract file not found: {self.config_path}"
+            )
+        if not is_unified_contract(self.config_path):
+            raise ValueError(
+                f"{self.config_path} is not a unified contract. Legacy "
+                "single-role contracts are reference-only; author a unified "
+                "contract (inline per-role maps + processor block, see "
+                "sns_robot_learning/configs/rosetta_contracts/)."
+            )
+        self._contract = load_unified_contract(self.config_path, self.role)
 
         if self.fps is None:
             self.fps = self._contract.fps

@@ -259,6 +259,16 @@ class _TopicBridge:
     # -------------------- Properties --------------------
 
     @property
+    def missing_streams(self) -> frozenset[str]:
+        """Contract keys whose buffer returned nothing on the last sample.
+
+        Updated by ``sample_observation``; the client's control loop polls
+        this after each ``get_observation()`` to decide whether the tick's
+        zero-filled entries are safe to act on.
+        """
+        return frozenset(self._missing_streams)
+
+    @property
     def is_active(self) -> bool:
         """
         Check if the node is in active state using the internal lifecycle node state.
@@ -438,6 +448,13 @@ class _RosettaLifecycleNode(Node):
 
     def sample_observation(self) -> RobotObservation:
         return self._bridge.sample_observation()
+
+    @property
+    def missing_streams(self) -> frozenset[str]:
+        return self._bridge.missing_streams
+
+    def send_safety_action(self) -> None:
+        self._bridge.send_safety_action()
 
     def publish_action(self, action: RobotAction) -> RobotAction:
         return self._bridge.publish_action(action)
@@ -642,6 +659,27 @@ class Rosetta(Robot):
         if self._bridge is not None:
             return self._bridge.sample_observation()
         return self._node.sample_observation()
+
+    @property
+    def missing_streams(self) -> frozenset[str]:
+        """Contract keys zero-filled by the most recent ``get_observation()``."""
+        if self._bridge is not None:
+            return self._bridge.missing_streams
+        if self._node is not None:
+            return self._node.missing_streams
+        return frozenset()
+
+    def send_safety_action(self) -> None:
+        """Publish the contract's ``safety_behavior`` action (hold / zeros) now.
+
+        ``disconnect()`` does this too, but the client calls it directly when
+        it detects a dead observation stream so the arm stops before the
+        goal's teardown runs.
+        """
+        if self._bridge is not None:
+            self._bridge.send_safety_action()
+        elif self._node is not None:
+            self._node.send_safety_action()
 
     def send_action(self, action: RobotAction) -> RobotAction:
         """

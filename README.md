@@ -75,7 +75,7 @@ Implements the [Robot](https://github.com/huggingface/lerobot/blob/main/src/lero
 
 **Lifecycle**: Uses ROS2 lifecycle nodes. `connect()` activates subscriptions and publishers. `disconnect()` triggers safety behavior then cleans up.
 
-**Missing data**: If a topic has no data, zeros are returned and a warning is logged once.
+**Missing data**: If a topic has no data (or its `asof` frame is older than `tol_ms`), zeros are returned, a warning is logged once, and the key is exposed via `missing_streams` so the caller can refuse to act on it.
 
 **Safety watchdog**: If no action is sent within `2/fps` seconds:
 - `none`: stop publishing

@@ -337,11 +337,17 @@ class _TopicBridge:
     # -------------------- Private --------------------
 
     def _should_use_watchdog(self) -> bool:
-        """Check if watchdog should be enabled."""
-        if not self._act_publishers:
-            return False
-        return not all(
-            spec.safety_behavior == "none" for spec, _ in self._act_publishers.values()
+        """Check if watchdog should be enabled.
+
+        Runs whenever there are action publishers, so an action stall is
+        logged even when every spec's ``safety_behavior`` is ``none``.
+        """
+        return bool(self._act_publishers)
+
+    def _has_safety_action(self) -> bool:
+        """Check if any action spec publishes something on safety stop."""
+        return any(
+            spec.safety_behavior != "none" for spec, _ in self._act_publishers.values()
         )
 
     def _on_watchdog(self) -> None:
@@ -366,8 +372,13 @@ class _TopicBridge:
         timeout_ns = int(2e9 / self._config.fps)  # 2 frame periods
 
         if now_ns - self._last_action_ns > timeout_ns:
-            self._node.get_logger().warning("Action timeout - sending safety action")
-            self.send_safety_action()
+            if self._has_safety_action():
+                self._node.get_logger().warning("Action timeout - sending safety action")
+                self.send_safety_action()
+            else:
+                self._node.get_logger().warning(
+                    "Action timeout - no safety action configured"
+                )
             self._last_action_ns = None
 
     def _on_observation(

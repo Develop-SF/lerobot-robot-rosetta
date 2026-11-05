@@ -62,8 +62,9 @@ plugin loads.
 - Watchdog (both modes): once at least one action has been published, if
   the next one doesn't arrive within `2/fps` seconds the bridge applies
   `safety_behavior` (`hold` / `zeros`). It never fires before the first
-  action, and when every spec is `none` no watchdog timer is created at
-  all.
+  action. The timer runs whenever there are action publishers, so the
+  timeout is logged even when every spec is `none` (nothing is published
+  then).
 - Missing topics return zeros and log once; the client node relies on this
   warm-up behaviour when it swaps contracts between goals.
 - Feature names follow the contract's selector order and namespace rules

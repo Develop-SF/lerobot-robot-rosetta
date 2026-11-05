@@ -77,10 +77,10 @@ Implements the [Robot](https://github.com/huggingface/lerobot/blob/main/src/lero
 
 **Missing data**: If a topic has no data (or its `asof` frame is older than `tol_ms`), zeros are returned, a warning is logged once, and the key is exposed via `missing_streams` so the caller can refuse to act on it.
 
-**Safety watchdog**: If no action is sent within `2/fps` seconds:
+**Safety watchdog**: If no action is sent within `2/fps` seconds, a warning is logged and:
 - `none`: stop publishing
-- `hold`: repeat last action
-- `zeros`: publish zeros
+- `hold`: repeat last action once (nothing if no action was sent yet)
+- `zeros`: publish zeros once
 
 **Timestamp alignment**: Observations from multiple topics are aligned using StreamBuffers with configurable strategies (`hold`, `asof`, `drop`).
 
